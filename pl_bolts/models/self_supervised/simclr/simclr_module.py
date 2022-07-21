@@ -84,6 +84,7 @@ class SimCLR(LightningModule):
         learning_rate: float = 1e-3,
         final_lr: float = 0.0,
         weight_decay: float = 1e-6,
+        accumulate_grad_batches: int = 1,
         **kwargs
     ):
         """
@@ -120,13 +121,16 @@ class SimCLR(LightningModule):
         self.learning_rate = learning_rate
         self.warmup_epochs = warmup_epochs
         self.max_epochs = max_epochs
+        self.accumulate_grad_batches = accumulate_grad_batches
 
         self.encoder = self.init_model()
 
         self.projection = Projection(input_dim=self.hidden_mlp, hidden_dim=self.hidden_mlp, output_dim=self.feat_dim)
 
         # compute iters per epoch
-        global_batch_size = self.num_nodes * self.gpus * self.batch_size if self.gpus > 0 else self.batch_size
+        global_batch_size = self.accumulate_grad_batches * self.batch_size
+        if self.gpus > 1:
+            global_batch_size = global_batch_size * self.num_nodes * self.gpus
         self.train_iters_per_epoch = self.num_samples // global_batch_size
 
     def init_model(self):
@@ -286,6 +290,7 @@ class SimCLR(LightningModule):
         # training params
         parser.add_argument("--fast_dev_run", default=1, type=int)
         parser.add_argument("--num_nodes", default=1, type=int, help="number of nodes for training")
+        parser.add_argument("--accumulate_grad_batches", default=1, type=int, help="number of batches to accumulate before the backpropation")
         parser.add_argument("--gpus", default=1, type=int, help="number of gpus to train on")
         parser.add_argument("--num_workers", default=8, type=int, help="num of workers per GPU")
         parser.add_argument("--optimizer", default="adam", type=str, help="choose between adam/lars")
@@ -360,6 +365,7 @@ def cli_main():
         args.jitter_strength = 1.0
 
         args.batch_size = 64
+        args.accumulate_grad_batches = 1
         args.num_nodes = 8
         args.gpus = 8  # per-node
         args.max_epochs = 800
